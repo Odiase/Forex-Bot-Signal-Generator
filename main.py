@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 
+import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -224,13 +225,13 @@ def startDriver():
     #    "--window-size=1200,1200",
         # "--ignore-certificate-errors"
     
-        "--headless",
+        # "--headless",
         
-        "--disable-gpu",
+        # "--disable-gpu",
         # # "--window-size=1920,1200",
         # "--ignore-certificate-errors",
         # "--disable-extensions",
-        "--no-sandbox",
+        # "--no-sandbox",
         # "--disable-dev-shm-usage",
         #'--remote-debugging-port=9222'
     ]
@@ -253,6 +254,19 @@ def getElement(driver, wait_time, element_locator, quantity_type):
             return elements
     except Exception as e:
         print(e)
+
+def sendTelegramSignal(message):
+    message = str(message)
+    TOKEN = "6592918138:AAEWmvPEgFAJ4-dctj0-XM1xmzkauN3L8sA"
+    chat_id = "-1002001136974"
+    # chat_id = "-1002049858126"
+    parameters = {
+        "chat_id" : chat_id,
+        "text" : message
+    }
+
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"#?chat_id={chat_id}&text={message}"
+    request = requests.get(url, data=parameters)
 
 def openSite(driver):
     '''Opens Currency Strength Meter'''
@@ -364,19 +378,25 @@ def DBPairValidation(pair_list):
     print("All Open Sessions : ", all_open_sessions)
     print("Pair List : ", pair_list)
     for session in all_open_sessions:
-        print(f"Session : {session}")
-        if session[1] not in pair_list:
+        does_not_exist_count = 0
+        for pair in pair_list:
+            # comparing currency pairs
+            if pair[0] != session[1]:
+                does_not_exist_count+=1
+
+        if does_not_exist_count == len(pair_list):
             db.closeSession(session[1])
-            # Send Signal to other dev to close that trade
-        # elif session[2] // write incase the symbol is there but a different trade option
-        else:
-            existing_trade_option = db.getOpenSession(session[1])[2]
+            sendTelegramSignal(f"{session[1]} \n Close All Trades on this Pair") #TODO
+                # Send Signal to other dev to close that trade
+            # elif session[2] // write incase the symbol is there but a different trade option
+            # write code so incase another signal indicator comes
+        
     for pair in pair_list:
         print("Trade Option : ", pair[1])
         db.insertNewSession(pair[0], pair[1], "OPEN")
 
 
-def getChartData(driver, trade_option_from_csm):
+def getChartData(driver, trade_option_from_csm, currency_pair):
     '''Gets the entry Point From the Chart Based off pine code editor'''
 
     time_now = datetime.now()
@@ -397,11 +417,14 @@ def getChartData(driver, trade_option_from_csm):
     time_difference = time_now - datetime.strptime(latest_trade_option_time, "%Y-%m-%d %H:%M")
     if time_difference.total_seconds() / 3600 >= 1 and latest_trade_option == trade_option_from_csm:
         print("Haha! its within the time frame.")
+        telegram_signal = f'''{currency_pair} \n{latest_trade_option}'''
+        sendTelegramSignal(telegram_signal)
+        print("Signal Sent")
         #sendSignalToMT4()
         pass
     else:
+        sendTelegramSignal(f"{currency_pair} \n\nNo Entry Point From this Pair")
         print("Its more than an Hour")
-        pass
     return latest_trade_option
         
 
@@ -417,14 +440,15 @@ def openTradingView(driver, pairs, pairs_trade_option):
         trade_option = pairs_trade_option[i][1]
 
         #changing chart timeframe
-        chart_body_el = getElement(driver, 20, (By.TAG_NAME, "body"), "single")
-        chart_body_el.send_keys("1h")
-        time.sleep(2)
-        # Use JavaScript to trigger the Enter key event
-        active_element = driver.switch_to.active_element
-        active_element.send_keys(Keys.ENTER)
-        print("CLicked Enter")
-        time.sleep(10)
+        if i == 0:
+            chart_body_el = getElement(driver, 20, (By.TAG_NAME, "body"), "single")
+            chart_body_el.send_keys("1h")
+            time.sleep(2)
+            # Use JavaScript to trigger the Enter key event
+            active_element = driver.switch_to.active_element
+            active_element.send_keys(Keys.ENTER)
+            print("CLicked Enter")
+            time.sleep(10)
 
         #open pine editor
         pine_editor = getElement(driver, 30, (By.CLASS_NAME, "tab-jJ_D7IlA"), "multiple")
@@ -432,25 +456,27 @@ def openTradingView(driver, pairs, pairs_trade_option):
         time.sleep(6)
 
         # interaction with pine editor
-        pine_editor = driver.switch_to.active_element
-        pine_editor.send_keys(Keys.CONTROL + 'a')
-        pine_editor.send_keys(Keys.BACKSPACE)
-        pine_editor.send_keys(PINE_EDITOR_SCRIPT)
+        if i == 0:
+            pine_editor = driver.switch_to.active_element
+            pine_editor.send_keys(Keys.CONTROL + 'a')
+            pine_editor.send_keys(Keys.BACKSPACE)
+            pine_editor.send_keys(PINE_EDITOR_SCRIPT)
         time.sleep(6)
         add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
         add_to_chart_el.click()
         time.sleep(5)
 
         # runs the account authentication of trading view
-        authenticateTradingView(driver)
-        add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
-        add_to_chart_el.click()
+        if i == 0:
+            authenticateTradingView(driver)
+            add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
+            add_to_chart_el.click()
 
         #clicks on "list of trades" Tab
         list_of_trade_el = getElement(driver, 20, (By.ID, "List of Trades"), "single")
         list_of_trade_el.click()
-        getChartData(driver, trade_option)
-        input(".>>")
+        order_signal = getChartData(driver, trade_option, pairs[i])
+        input(">>")
         # Sending the pine script data to the editor
 
 
@@ -461,6 +487,7 @@ def main():
     openSite(driver)
     currency_list = getCurrencyMeters(driver)
     pairs_data = pair_currencies(currency_list)
+    
     DBPairValidation(pairs_data[1])
     openTradingView(driver, pairs_data[0], pairs_data[1])
     
