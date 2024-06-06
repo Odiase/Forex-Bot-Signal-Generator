@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 
+import schedule
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -122,6 +123,28 @@ class DB_Plug():
         self.conn.commit()
         # Close cursor
         cur.close()
+
+    def closeAllOpenSessions(self):
+        '''Change the status of all trading sessions to "CLOSED" where the status is "OPEN"'''
+
+        # Open a cursor to perform database operations
+        cur = self.conn.cursor()
+        try:
+            # Execute the command: update records to set trade_status to 'CLOSED' for all open sessions
+            cur.execute("""
+                UPDATE trading_session
+                SET trade_status = 'CLOSED'
+                WHERE trade_status = 'OPEN'
+            """)
+            # Commit the transaction
+            self.conn.commit()
+        except Exception as e:
+            # Rollback in case of any error
+            self.conn.rollback()
+            print(f"An error occurred: {e}")
+        finally:
+            # Close the cursor
+            cur.close()
 
     def close(self):
         '''Close the database connection'''
@@ -370,29 +393,74 @@ def authenticateTradingView(driver):
 def checkForBuySinal(driver):
     pass
 
+# def DBPairValidation(pair_list):
+#     '''Checks open trades, then closes trades that don't meet requirement any longer and saves new Trades'''
+
+#     db = DB_Plug()
+#     all_open_sessions = db.getAllOpenSessions()
+#     filtered_pair_list = []
+#     print("All Open Sessions : ", all_open_sessions)
+#     print("Pair List : ", pair_list)
+#     for session in all_open_sessions:
+#         does_not_exist_count = 0
+#         for pair in pair_list:
+#             # comparing currency pairs
+#             if pair[0] != session[1]:
+#                 does_not_exist_count+=1
+#                 filtered_pair_list.append(pair)
+#             else:
+#                 '''Checking if the pair has the same trade option'''
+#                 if pair[1] == session[2]:
+#                     pass
+
+#         if does_not_exist_count == len(pair_list):
+#             db.closeSession(session[1])
+#             sendTelegramSignal(f"{session[1]} \n Close All Trades on this Pair") #TODO
+#                 # Send Signal to other dev to close that trade
+#             # elif session[2] // write incase the symbol is there but a different trade option
+#             # write code so incase another signal indicator comes
+    
+#     print("FIltered Pair List : ", filtered_pair_list)
+#     for pair in filtered_pair_list:
+#         print("Trade Option : ", pair[1])
+#         db.insertNewSession(pair[0], pair[1], "OPEN")
 def DBPairValidation(pair_list):
-    '''Checks open trades, then closes trades that don't meet requirement any longer and saves new Trades'''
+    '''Checks open trades, then closes trades that don't meet requirements any longer and saves new Trades'''
 
     db = DB_Plug()
     all_open_sessions = db.getAllOpenSessions()
+    filtered_pair_list = []
     print("All Open Sessions : ", all_open_sessions)
     print("Pair List : ", pair_list)
-    for session in all_open_sessions:
-        does_not_exist_count = 0
-        for pair in pair_list:
-            # comparing currency pairs
-            if pair[0] != session[1]:
-                does_not_exist_count+=1
 
-        if does_not_exist_count == len(pair_list):
-            db.closeSession(session[1])
-            sendTelegramSignal(f"{session[1]} \n Close All Trades on this Pair") #TODO
-                # Send Signal to other dev to close that trade
-            # elif session[2] // write incase the symbol is there but a different trade option
-            # write code so incase another signal indicator comes
-        
+    # Iterate through all open sessions to find sessions that need to be closed
+    for session in all_open_sessions:
+        session_currency = session[1]
+        session_trade_option = session[2]
+
+        # Check if the session exists in the new pair list with the same trade option
+        session_exists_in_pair_list = any(pair[0] == session_currency and pair[1] == session_trade_option for pair in pair_list)
+
+        # If the session does not exist in the new pair list, close it
+        if not session_exists_in_pair_list:
+            db.closeSession(session_currency)
+            sendTelegramSignal(f"NON POLAR ALERT!!! \n\n{session_currency} \n Close All Trades on this Pair\n\nNO LONGER POLAR!")
+
+    # Filter out pairs that already exist in the open sessions with the same trade option
     for pair in pair_list:
-        print("Trade Option : ", pair[1])
+        pair_currency = pair[0]
+        pair_trade_option = pair[1]
+
+        # Check if the pair exists in the open sessions with the same trade option
+        pair_exists_in_open_sessions = any(session[1] == pair_currency and session[2] == pair_trade_option for session in all_open_sessions)
+
+        # If the pair does not exist in the open sessions with the same trade option, add it to the filtered pair list
+        if not pair_exists_in_open_sessions:
+            filtered_pair_list.append(pair)
+
+    print("Filtered Pair List: ", filtered_pair_list)
+    for pair in filtered_pair_list:
+        print("Trade Option: ", pair[1])
         db.insertNewSession(pair[0], pair[1], "OPEN")
 
 
@@ -435,6 +503,15 @@ def openTradingView(driver, pairs, pairs_trade_option):
 
     for i in range(len(pairs)):
         driver.get(f"https://www.tradingview.com/chart/?symbol=FX_IDC%3A{pairs[i]}")
+        #Handling window pop up alerts
+        if i > 0:
+            try:
+                alert = driver.switch_to.alert
+                alert_text = alert.text
+                print(f"Alert text: {alert_text}")
+                alert.accept()  
+            except:
+                print("An Exception Occured..")
         time.sleep(5)
 
         trade_option = pairs_trade_option[i][1]
@@ -476,19 +553,43 @@ def openTradingView(driver, pairs, pairs_trade_option):
         list_of_trade_el = getElement(driver, 20, (By.ID, "List of Trades"), "single")
         list_of_trade_el.click()
         order_signal = getChartData(driver, trade_option, pairs[i])
-        input(">>")
         # Sending the pine script data to the editor
 
 
-def main():
-    '''Runs the Bot'''
-
+def polarStatusCheck():
+    '''Checks if the polar status for opened pairs is still open'''
     driver = startDriver()
     openSite(driver)
     currency_list = getCurrencyMeters(driver)
     pairs_data = pair_currencies(currency_list)
     
     DBPairValidation(pairs_data[1])
-    openTradingView(driver, pairs_data[0], pairs_data[1])
-    
-main()
+    driver.quit()
+
+def runBot():
+    '''Runs the Bot'''
+
+    try:
+        driver = startDriver()
+        openSite(driver)
+        currency_list = getCurrencyMeters(driver)
+        pairs_data = pair_currencies(currency_list)
+        
+        DBPairValidation(pairs_data[1])
+        openTradingView(driver, pairs_data[0], pairs_data[1])
+        driver.quit()
+    except:
+        runBot()
+
+def main():
+    # Schedule tasks
+    schedule.every(3).minutes.do(runBot)
+    # schedule.every().hour.do(sub_main)
+    schedule.every(1).minutes.do(polarStatusCheck)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+# main()
+runBot()
