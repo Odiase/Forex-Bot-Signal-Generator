@@ -42,6 +42,21 @@ class DB_Plug():
         # Close cursor and communication with the database
         cur.close()
         self.conn.close()
+    
+
+    def createTable2(self):
+        '''Create the Table that holds record for Trade orders'''
+        cur = self.conn.cursor()
+        cur.execute("""
+        
+            CREATE TABLE trade_orders (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(10) NOT NULL,
+                action VARCHAR(10) NOT NULL,
+                status VARCHAR(10) DEFAULT 'PENDING',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
 
     def insertNewSession(self, currency_pairs, trade_option, trade_status):
         '''Insert a new record into the trading_session table'''

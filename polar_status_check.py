@@ -1,5 +1,4 @@
 import time
-import pytz
 from datetime import datetime
 
 import schedule
@@ -18,11 +17,9 @@ import chromedriver_autoinstaller
 
 from twocaptcha import TwoCaptcha
 
-
 import psycopg2
 from datetime import date
 from urllib.parse import urlparse, parse_qs, unquote
-
 
 
 class DB_Plug():
@@ -187,60 +184,6 @@ def parse_db_url(url, ssl_require=False):
 
     return parsed_config
 
-
-
-
-PINE_EDITOR_SCRIPT = """
-//@version=5
-strategy("MACD and EMA Strategy with Position Tool", overlay=true)
-
-// MACD Settings
-fastLength = 12
-slowLength = 26
-signalLength = 9
-macdSource = close
-
-[macdLine, signalLine, _] = ta.macd(macdSource, fastLength, slowLength, signalLength)
-macdColor = macdLine > signalLine ? color.green : color.red
-signalColor = color.red
-
-// EMA Settings
-emaLength = 200
-emaSource = close
-emaOffset = 0
-emaMethod = ta.ema(emaSource, emaLength)
-emaColor = close > emaMethod ? color.green : color.red
-
-// Plot MACD and Signal lines
-plot(macdLine, color=macdColor, title="MACD Line")
-plot(signalLine, color=signalColor, title="Signal Line")
-
-// Plot EMA line
-plot(emaMethod, color=emaColor, title="EMA Line")
-
-// Strategy logic
-buySignal = ta.crossover(macdLine, signalLine) and close > emaMethod
-sellSignal = ta.crossunder(macdLine, signalLine) and close < emaMethod
-
-bgcolor(buySignal ? color.green : na, transp=90)
-bgcolor(sellSignal ? color.red : na, transp=90)
-
-// Plot Buy and Sell signals on the chart
-plotshape(series=buySignal, title="Buy Signal", color=color.green, style=shape.triangleup, location=location.belowbar)
-plotshape(series=sellSignal, title="Sell Signal", color=color.red, style=shape.triangledown, location=location.abovebar)
-
-// Position tool
-stopLossPips = 20 // Maximum 100 pips
-takeProfitPips = stopLossPips * 2
-
-strategy.entry("Buy", strategy.long, when=buySignal)
-strategy.exit("Take Profit/Stop Loss", from_entry="Buy", loss=stopLossPips, profit=takeProfitPips)
-
-strategy.entry("Sell", strategy.short, when=sellSignal)
-strategy.exit("Take Profit/Stop Loss", from_entry="Sell", loss=stopLossPips, profit=takeProfitPips)
-"""
-
-
 def startDriver():
     chromedriver_autoinstaller.install() 
     chrome_options = webdriver.ChromeOptions()
@@ -281,12 +224,8 @@ def getElement(driver, wait_time, element_locator, quantity_type):
 
 def sendTelegramSignal(message):
     message = str(message)
-    TOKEN = "7258721074:AAHDu-Ckm6k_0l8wp1z6B47LDP-p8iTjuhs"
-    # chat_id = "-1002001136974"
-    chat_id = "-1002238594821"
-
-    # TOKEN = "7258721074:AAHDu-Ckm6k_0l8wp1z6B47LDP-p8iTjuhs"
-    # chat_id = "-1002001136974" # Test Group
+    TOKEN = "6592918138:AAEWmvPEgFAJ4-dctj0-XM1xmzkauN3L8sA"
+    chat_id = "-1002001136974" # Test Group
     # chat_id = "-1002238594821"
     parameters = {
         "chat_id" : chat_id,
@@ -362,41 +301,6 @@ def pair_currencies(currency_list):
     print(pairs)
     return pairs, db_data
 
-def solveCaptcha():
-    solver = TwoCaptcha("d1b123a6ba1e5655887c3d28dd3d3ea6")
-    result = solver.recaptcha("6Lcqv24UAAAAAIvkElDvwPxD0R8scDnMpizaBcHQ","https://www.tradingview.com")
-    time.sleep(60)
-    print("Result : ", result)
-
-def authenticateTradingView(driver):
-    try:
-        email_btn = getElement(driver, 20, (By.CLASS_NAME, "emailButton-nKAw8Hvt"), "single")
-        email_btn.click()
-        time.sleep(3)
-
-        email_field = driver.switch_to.active_element
-        email_field.send_keys("workwisehub.office@gmail.com")
-        time.sleep(3)
-        email_field.send_keys(Keys.TAB)
-        password_field = driver.switch_to.active_element
-        password_field.send_keys("dafflebag4eva")
-        password_field.send_keys(Keys.ENTER)
-        solver = TwoCaptcha("d1b123a6ba1e5655887c3d28dd3d3ea6")
-        print("Solving Captcha")
-        result = solver.recaptcha("6Lcqv24UAAAAAIvkElDvwPxD0R8scDnMpizaBcHQ","https://www.tradingview.com")
-
-        recaptcha_response = driver.find_element(By.ID, 'g-recaptcha-response')
-        driver.execute_script("arguments[0].style.display = 'block';", recaptcha_response)  # Make the element visible if necessary
-        recaptcha_response.send_keys(result['code'])
-        password_field.send_keys(Keys.ENTER)
-        time.sleep(30)
-
-        return True
-    except:
-        return False
-
-def checkForBuySinal(driver):
-    pass
 
 def DBPairValidation(pair_list):
     '''Checks open trades, then closes trades that don't meet requirements any longer and saves new Trades'''
@@ -439,109 +343,10 @@ def DBPairValidation(pair_list):
         sendTelegramSignal(f"{pair[0]} [Added to DB] \n\n")
 
 
-def getChartData(driver, trade_option_from_csm, currency_pair):
-    '''Gets the entry Point From the Chart Based off pine code editor'''
-
-    time_now = datetime.now()
-
-    #get the latest buy/sell signal data
-    signal_data_cells = getElement(driver, 30, (By.CSS_SELECTOR, ".ka-tr"), "multiple")
-    latest_signal_cell = signal_data_cells[1]
-    latest_trade_option_el = latest_signal_cell.find_elements(By.TAG_NAME, "td")[2]
-    latest_trade_option = latest_trade_option_el.find_elements(By.CSS_SELECTOR, ".ka-cell")[1].text
-
-    latest_trade_option_time_el = latest_signal_cell.find_elements(By.TAG_NAME, "td")[3]
-    latest_trade_option_time = latest_trade_option_time_el.find_elements(By.CSS_SELECTOR, ".ka-cell")[1].text
-
-    print(f"Latest Trade Option : {latest_trade_option} \nLatest Trade Time : {latest_trade_option_time}")
-
-    # checking if the time between the last signal and current time is close enought to initiate a signal to MT4
-
-    time_difference = time_now - datetime.strptime(latest_trade_option_time, "%Y-%m-%d %H:%M")
-    if time_difference.total_seconds() / 3600 >= 1 and latest_trade_option == trade_option_from_csm:
-        print("Haha! its within the time frame.")
-        telegram_signal = f'''{currency_pair} \n{latest_trade_option}'''
-        sendTelegramSignal(telegram_signal)
-        print("Signal Sent")
-        #sendSignalToMT4()
-        pass
-    else:
-        sendTelegramSignal(f"{currency_pair} \n\nNo Entry Point From this Pair")
-        print("Its more than an Hour")
-    return latest_trade_option
-        
-
-
-
-def openTradingView(driver, pairs, pairs_trade_option):
-    '''Opens Trading View and Pine Editor to Enter Trade Script'''
-
-    for i in range(len(pairs)):
-        if i != 0:
-            url = f"https://www.tradingview.com/chart/?symbol=FX_IDC%3A{pairs[i]}"
-            driver.execute_script(f"window.open('{url}', '_blank');")
-            time.sleep(8)
-        else:
-            driver.get(f"https://www.tradingview.com/chart/?symbol=FX_IDC%3A{pairs[i]}")
-
-        trade_option = pairs_trade_option[i][1]
-
-        #changing chart timeframe
-        if i == 0:
-            chart_body_el = getElement(driver, 20, (By.TAG_NAME, "body"), "single")
-            chart_body_el.send_keys("1h")
-            time.sleep(2)
-            # Use JavaScript to trigger the Enter key event
-            active_element = driver.switch_to.active_element
-            active_element.send_keys(Keys.ENTER)
-            print("CLicked Enter")
-            time.sleep(10)
-
-        #open pine editor
-        pine_editor_els = getElement(driver, 30, (By.CLASS_NAME, "tab-jJ_D7IlA"), "multiple")
-        pine_editor_els[1].click()
-        print("Clicked Pine Editor for : ", i)
-        time.sleep(10)
-
-        # interaction with pine editor
-        if i == 0:
-            # this code is to make sure this element is existing, which in turns means 
-            editor_css_selector = ".monaco-scrollable-element.editor-scrollable.vs"
-            editor = getElement(driver, 30, (By.CSS_SELECTOR, editor_css_selector), "single")
-            print("editor elements : ", editor)
-            time.sleep(10)
-            pine_editor = driver.switch_to.active_element
-            pine_editor.send_keys(Keys.CONTROL + 'a')
-            pine_editor.send_keys(Keys.BACKSPACE)
-            pine_editor.send_keys(PINE_EDITOR_SCRIPT)
-            time.sleep(6)
-            add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
-            add_to_chart_el.click()
-            time.sleep(5)
-
-        # runs the account authentication of trading view
-        if i == 0:
-            authenticateTradingView(driver)
-        if i > 0:
-            pine_editor_els[1].click()
-            pine_editor_els[1].click()
-            pine_editor_els[1].click()
-            pine_editor_els[1].click()
-            
-            add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
-            add_to_chart_el.click()
-
-        #clicks on "list of trades" Tab
-        
-        list_of_trade_el = getElement(driver, 20, (By.ID, "List of Trades"), "single")
-        list_of_trade_el.click()
-        order_signal = getChartData(driver, trade_option, pairs[i])
-        # Sending the pine script data to the editor
-#class="button-D4RPB3ZC size-small-D4RPB3ZC color-brand-D4RPB3ZC variant-primary-D4RPB3ZC apply-overflow-tooltip apply-overflow-tooltip--check-children-recursively apply-overflow-tooltip--allow-text"
-
 def polarStatusCheck():
     '''Checks if the polar status for opened pairs is still open'''
-    
+    driver = startDriver()
+    driver.quit()
     driver = startDriver()
 
     openSite(driver)
@@ -551,67 +356,5 @@ def polarStatusCheck():
     DBPairValidation(pairs_data[1])
     driver.quit()
 
-def runBot():
-    '''Runs the Bot'''
 
-    driver = startDriver()
-    openSite(driver)
-    currency_list = getCurrencyMeters(driver)
-    pairs_data = pair_currencies(currency_list)
-    
-    DBPairValidation(pairs_data[1])
-    
-    # openTradingView(driver, pairs_data[0], pairs_data[1])
-    openTradingView(driver,['NZDUSD', 'EURJPY', 'USDCAD'],[['NZDUSD', 'SELL'], ['EURJPY', 'BUY'],['USDCAD', 'SELL']])
-    driver.quit()
-
-def main():
-    # Schedule tasks
-    schedule.every(2).minutes.do(runBot)
-    # schedule.every().hour.do(sub_main)
-    schedule.every(1).minutes.do(polarStatusCheck)
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-
-def perform_trading_task():
-    # Define the timezone for Nigeria
-    nigerian_tz = pytz.timezone('Africa/Lagos')
-    
-    # Get the current time in UTC
-    current_time_utc = datetime.now(pytz.utc)
-    
-    # Convert the current time to Nigeria's timezone
-    current_time_nigeria = current_time_utc.astimezone(nigerian_tz)
-    
-    # adding -5 because for some reason, the timezone is returning an hour that is 5hour ahead from the current
-    current_hour = current_time_nigeria.hour -5 
-    current_day = current_time_nigeria.weekday()
-
-    # Debug statement to print current time details
-    print(f"Current time in Nigeria: {current_time_nigeria.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Current hour in Nigeria: {current_hour}")
-    print(f"Current day in Nigeria: {current_day}") 
-    current_hour = 19
-
-    if current_day >= 5 and 12 <= current_hour < 22:  # Monday to Friday, 12 PM to 6 PM
-        print("Yeah It Is WIthin the Time frame")
-        main()
-    else:
-        print(current_day)
-        print(current_hour)
-        print("Try Again Boss")
-
-# if __name__ == "__main__":
-#     schedule.every().hour.at(":00").do(perform_trading_task)
-#     schedule.every().hour.at(":30").do(perform_trading_task)
-
-#     while True:
-#         schedule.run_pending()
-#         time.sleep(1)
-
-# perform_trading_task()
-# main()
-runBot()
+polarStatusCheck()
