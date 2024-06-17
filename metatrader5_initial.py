@@ -263,7 +263,7 @@ def close_trades(symbol):
 
 # Example usage:
 # Replace 'NZDUSD' with the symbol you want to trade
-symbol = 'NZDUSD'
+# symbol = 'NZDUSD'
 
 # Open a sell trade
 # open_trade(symbol, mt5.ORDER_TYPE_SELL)
@@ -291,6 +291,9 @@ if __name__ == "__main__":
     # db.insert_trade_order('EURUSD', 'BUY')
     # db.insert_trade_order('GBPUSD', 'SELL')
     while True:
-        check_database()
+        try:
+            check_database()
+        except Exception as e:
+            print(e)
         time.sleep(20)  # Check every 20 seconds
 

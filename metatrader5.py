@@ -1,8 +1,11 @@
-import MetaTrader5 as mt5
 import time
-
-import psycopg2
 from urllib.parse import urlparse, parse_qs, unquote
+
+import MetaTrader5 as mt5
+import psycopg2
+
+
+################## DATABASE STUFF
 
 class TradeDatabase:
     def __init__(self):
@@ -89,10 +92,10 @@ class TradeDatabase:
         cur.close()
         return trades
     
-    def delete_trade(self, trade_id):
-        '''Delete a trade from trade_orders table by trade ID'''
+    def delete_trade(self, symbol):
+        '''Delete a trade from trade_orders table by trade SYMBOL'''
         cur = self.conn.cursor()
-        cur.execute("DELETE FROM trade_orders WHERE id = %s;", (trade_id,))
+        cur.execute("DELETE FROM trade_orders WHERE symbol = %s;", (symbol,))
         self.conn.commit()
         cur.close()
     
@@ -104,10 +107,10 @@ class TradeDatabase:
         cur.close()
         return trades
     
-    def delete_close_order(self, close_order_id):
-        '''Delete a close order from close_orders table by order ID'''
+    def delete_close_order(self, close_order_symbol):
+        '''Delete a close order from close_orders table by order SYMBOL'''
         cur = self.conn.cursor()
-        cur.execute("DELETE FROM close_orders WHERE id = %s;", (close_order_id,))
+        cur.execute("DELETE FROM close_orders WHERE symbol= %s;", (close_order_symbol,))
         self.conn.commit()
         cur.close()
     
@@ -136,10 +139,14 @@ class TradeDatabase:
         self.conn.close()
 
 
+
+
+
+
 # Your login credentials
-login = 51829318  # Replace with your login ID
-password = '4n$Q1XNJqonzTV'  # Replace with your password
-server = 'ICMarketsSC-Demo'  # Replace with your server name
+login = 51829318
+password = '4n$Q1XNJqonzTV'
+server = 'ICMarketsSC-Demo'
 
 # Initialize TradeDatabase instance
 db = TradeDatabase()
@@ -175,7 +182,6 @@ def open_trade(symbol, action):
         return
     
     lot_size = determine_lot_size()
-    print(lot_size)
     
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:
@@ -196,7 +202,7 @@ def open_trade(symbol, action):
         return
 
     price = symbol_tick.ask if action == mt5.ORDER_TYPE_BUY else symbol_tick.bid
-    print("Price : ", price)
+    
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -209,27 +215,20 @@ def open_trade(symbol, action):
         "type_filling": mt5.ORDER_FILLING_IOC  # Trying IOC filling mode
     }
     
-    try:
-        result = mt5.order_send(request)
-    except Exception as e:
-        print("Exception Occured : ", e)
-        return
-
-    print("Result : ", result)
+    result = mt5.order_send(request)
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         print("Failed to open trade:", result.comment)
     else:
         print("Trade opened successfully")
         # Mark trade as executed in the database
-        db.delete_trade(result.order)
-    
+        db.delete_trade(symbol)
+
     mt5.shutdown()
 
 # Function to close all trades for a symbol
 def close_trades(symbol):
     if not initialize_and_login():
         return
-    
     positions = mt5.positions_get(symbol=symbol)
     if positions is None:
         print("No positions found for symbol:", symbol)
@@ -258,18 +257,29 @@ def close_trades(symbol):
             print("Failed to close trade:", result.comment)
         else:
             print("Trade closed successfully")
-            # Mark close order as executed in the database
-            db.delete_close_order(result.order)
-    
+            db.delete_close_order(symbol)
+
     mt5.shutdown()
+
+# Example usage:
+# Replace 'NZDUSD' with the symbol you want to trade
+# symbol = 'NZDUSD'
+
+# Open a sell trade
+# open_trade(symbol, mt5.ORDER_TYPE_SELL)
+
+# close_trades(symbol)
 
 # Function to check database for pending trades and close orders
 def check_database():
     pending_trades = db.get_pending_trades()
     if pending_trades:
         for trade in pending_trades:
-            print(trade)
-            open_trade(trade[1], trade[2])
+            option = mt5.ORDER_TYPE_SELL
+            if trade[2] == "BUY":
+                option = mt5.ORDER_TYPE_BUY
+
+            open_trade(trade[1], option)
     
     pending_closes = db.get_pending_closes()
     if pending_closes:
@@ -281,5 +291,9 @@ if __name__ == "__main__":
     # db.insert_trade_order('EURUSD', 'BUY')
     # db.insert_trade_order('GBPUSD', 'SELL')
     while True:
-        check_database()
+        try:
+            check_database()
+        except Exception as e:
+            print(e)
         time.sleep(20)  # Check every 20 seconds
+
