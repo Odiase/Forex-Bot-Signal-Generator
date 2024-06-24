@@ -741,9 +741,24 @@ def runBot():
     for i in range(len(pairs_data)):
         if i > 0:
             driver = startDriver()
-        print(f"Opening for chart {pairs_data[0][i]}")
-        openTradingView2(driver, pairs_data[0][i], pairs_data[1][i][1])
-        driver.quit()
+
+        retry_count = 0
+        retry = True
+
+        while retry:
+            try:
+                print(f"Opening for chart {pairs_data[0][i]}")
+                openTradingView2(driver, pairs_data[0][i], pairs_data[1][i][1])
+                driver.quit()
+                retry = False
+            except:
+                # Retries Opening Trading View On This Pair Just Once.
+                if retry_count >= 1:
+                    sendTelegramSignal(f"Network Error Detected \n\n Retry In Progress")
+                    retry = False
+                    driver.quit()
+                else:
+                    retry_count+=1
     driver.quit()
 
 
