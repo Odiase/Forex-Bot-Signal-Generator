@@ -7,6 +7,7 @@ import psycopg2
 
 ################## DATABASE STUFF
 
+path_to_terminal = "C:\\Program Files\\Alchemy Markets MT5 Terminal\\terminal64.exe"
 class TradeDatabase:
     def __init__(self):
         '''Initialize Database Connection'''
@@ -153,7 +154,7 @@ db = TradeDatabase()
 
 # Function to initialize and login to MetaTrader 5
 def initialize_and_login():
-    if not mt5.initialize():
+    if not mt5.initialize(path_to_terminal):
         print("initialize() failed, error code =", mt5.last_error())
         return False
 
@@ -291,9 +292,11 @@ if __name__ == "__main__":
     # db.insert_trade_order('EURUSD', 'BUY')
     # db.insert_trade_order('GBPUSD', 'SELL')
     while True:
+        print("Starting Loop")
         try:
             check_database()
         except Exception as e:
             print(e)
+        print("Ended Loop")
         time.sleep(20)  # Check every 20 seconds
 

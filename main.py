@@ -1,5 +1,4 @@
 import time
-import pytz
 from datetime import datetime
 
 import schedule
@@ -23,6 +22,141 @@ import psycopg2
 from datetime import date
 from urllib.parse import urlparse, parse_qs, unquote
 
+##############DATABASES CONNECTIONS
+
+class TradeDatabase:
+    def __init__(self):
+        '''Initialize Database Connection'''
+        # Parse the connection URL
+        config = self.parse_db_url("postgresql://forex_signal_bot_user:cXCwDrnAO9oZFiEI0ob0LZiLpYO3WsY6@dpg-cpri553qf0us738fs13g-a.oregon-postgres.render.com/forex_signal_bot", ssl_require=True)
+
+        # Establish the connection
+        self.conn = psycopg2.connect(
+            database=config["NAME"],
+            user=config["USER"],
+            password=config["PASSWORD"],
+            host=config["HOST"],
+            port=config["PORT"],
+            sslmode=config.get("sslmode", "")
+        )
+
+    def parse_db_url(self, url, ssl_require=False):
+        parsed_config = {}
+
+        spliturl = urlparse(url)
+
+        path = spliturl.path[1:]
+        query = parse_qs(spliturl.query)
+
+        hostname = spliturl.hostname or ""
+        if "%" in hostname:
+            hostname = spliturl.netloc
+            if "@" in hostname:
+                hostname = hostname.rsplit("@", 1)[1]
+            hostname = unquote(hostname)
+
+        port = spliturl.port
+
+        parsed_config.update(
+            {
+                "NAME": unquote(path or ""),
+                "USER": unquote(spliturl.username or ""),
+                "PASSWORD": unquote(spliturl.password or ""),
+                "HOST": hostname,
+                "PORT": port or 5432,
+            }
+        )
+
+        if ssl_require:
+            parsed_config["sslmode"] = "require"
+
+        return parsed_config
+
+    def create_table_trade_orders(self):
+        '''Create the Table that holds record for Trade orders'''
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS trade_orders (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(10) NOT NULL,
+                action VARCHAR(10) NOT NULL,
+                status VARCHAR(10) DEFAULT 'PENDING',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        self.conn.commit()
+        cur.close()
+
+    def create_table_close_orders(self):
+        '''Create the Table that holds record for Close orders'''
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS close_orders (
+                id SERIAL PRIMARY KEY,
+                symbol VARCHAR(10) NOT NULL,
+                status VARCHAR(10) DEFAULT 'PENDING',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        self.conn.commit()
+        cur.close()
+
+    def get_pending_trades(self):
+        '''Fetch trades with status 'PENDING' from trade_orders table'''
+        cur = self.conn.cursor()
+        cur.execute("SELECT * FROM trade_orders WHERE status = 'PENDING';")
+        trades = cur.fetchall()
+        cur.close()
+        return trades
+
+    def delete_trade(self, symbol):
+        '''Delete a trade from trade_orders table by trade SYMBOL'''
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM trade_orders WHERE symbol = %s;", (symbol,))
+        self.conn.commit()
+        cur.close()
+
+    def get_pending_closes(self):
+        '''Fetch trades with status 'PENDING' from close_orders table'''
+        cur = self.conn.cursor()
+        cur.execute("SELECT * FROM close_orders WHERE status = 'PENDING';")
+        trades = cur.fetchall()
+        cur.close()
+        return trades
+
+    def delete_close_order(self, close_order_symbol):
+        '''Delete a close order from close_orders table by order SYMBOL'''
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM close_orders WHERE symbol= %s;", (close_order_symbol,))
+        self.conn.commit()
+        cur.close()
+
+    def insert_trade_order(self, symbol, action):
+        '''Insert a new trade order into trade_orders table'''
+        cur = self.conn.cursor()
+        cur.execute("""
+            INSERT INTO trade_orders (symbol, action)
+            VALUES (%s, %s);
+        """, (symbol, action))
+        self.conn.commit()
+        cur.close()
+
+    def insert_close_order(self, symbol):
+        '''Insert a new close order into close_orders table'''
+        cur = self.conn.cursor()
+        cur.execute("""
+            INSERT INTO close_orders (symbol)
+            VALUES (%s);
+        """, (symbol,))
+        self.conn.commit()
+        cur.close()
+
+    def close(self):
+        '''Close the database connection'''
+        self.conn.close()
+
+
+db2 = TradeDatabase()
 
 
 class DB_Plug():
@@ -31,8 +165,8 @@ class DB_Plug():
     def __init__(self):
         '''Initialize Database Connection'''
         # Parse the connection URL
-        config = parse_db_url("postgres://forex_tradfing_bot_db_user:884Oc6Dxk8nqykNgI4K87cSClMb7f1Ga@dpg-cp7kus7sc6pc73ac33i0-a.oregon-postgres.render.com/forex_tradfing_bot_db", ssl_require=True)
-        
+        config = parse_db_url("postgresql://forex_signal_bot_user:cXCwDrnAO9oZFiEI0ob0LZiLpYO3WsY6@dpg-cpri553qf0us738fs13g-a.oregon-postgres.render.com/forex_signal_bot", ssl_require=True)
+
         # Establish the connection
         self.conn = psycopg2.connect(
             database=config["NAME"],
@@ -94,7 +228,7 @@ class DB_Plug():
         # Close cursor
         cur.close()
         return records
-    
+
     def getAllOpenSessions(self):
         '''Returns All trading sessions with status "OPEN" '''
 
@@ -190,6 +324,14 @@ def parse_db_url(url, ssl_require=False):
 
 
 
+
+
+
+
+
+
+
+
 PINE_EDITOR_SCRIPT = """
 //@version=5
 strategy("MACD and EMA Strategy with Position Tool", overlay=true)
@@ -242,26 +384,20 @@ strategy.exit("Take Profit/Stop Loss", from_entry="Sell", loss=stopLossPips, pro
 
 
 def startDriver():
-    chromedriver_autoinstaller.install() 
-    chrome_options = webdriver.ChromeOptions()
-    options = [
-    # Define window size here
-    #    "--window-size=1200,1200",
-        # "--ignore-certificate-errors"
-    
-        # "--headless",
-        
-        # "--disable-gpu",
-        # # "--window-size=1920,1200",
-        # "--ignore-certificate-errors",
-        # "--disable-extensions",
-        # "--no-sandbox",
-        # "--disable-dev-shm-usage",
-        #'--remote-debugging-port=9222'
-    ]
-    for option in options:
-        chrome_options.add_argument(option)
-    driver = webdriver.Chrome(options=chrome_options)
+    # chromedriver_autoinstaller.install()
+    options = Options()
+    # options.add_argument("--no-sandbox")
+    # options.add_argument("--headless")
+    # options.add_argument("--disable-gpu")
+    # options.add_argument("--disable-dev-shm-usage")  # overcome limited resource problems
+    # options.add_argument("--disable-software-rasterizer")
+    # options.add_argument("--disable-extensions")
+    # options.add_argument("--remote-debugging-port=9222")
+
+
+    # for option in options:
+    #     chrome_options.add_argument(option)
+    driver = webdriver.Chrome(options=options)
 
     return driver
 
@@ -283,18 +419,19 @@ def sendTelegramSignal(message):
     message = str(message)
     TOKEN = "7258721074:AAHDu-Ckm6k_0l8wp1z6B47LDP-p8iTjuhs"
     # chat_id = "-1002001136974"
-    chat_id = "-1002238594821"
-
-    # TOKEN = "7258721074:AAHDu-Ckm6k_0l8wp1z6B47LDP-p8iTjuhs"
-    # chat_id = "-1002001136974" # Test Group
+    #oduwa, #dima group
+    chat_ids = ["1614557200", "-1002238594821"]
     # chat_id = "-1002238594821"
-    parameters = {
-        "chat_id" : chat_id,
-        "text" : message
-    }
-
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"#?chat_id={chat_id}&text={message}"
-    request = requests.get(url, data=parameters)
+    for chat_id in chat_ids:
+        try:
+            parameters = {
+                "chat_id" : chat_id,
+                "text" : message
+            }
+            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"#?chat_id={chat_id}&text={message}"
+            request = requests.get(url, data=parameters)
+        except:
+            pass
 
 def openSite(driver):
     '''Opens Currency Strength Meter'''
@@ -315,7 +452,7 @@ def getCurrencyMeters(driver):
         element_data = {}
         element_data['currency'] = i.find_element(By.CLASS_NAME, 'title').text
         element_data['currency_level'] = int(i.find_element(By.CLASS_NAME, 'level').get_attribute('style').split(':')[1].replace("%;", ""))
-        
+
         currency_meter_list.append(element_data)
     return currency_meter_list
 
@@ -395,9 +532,6 @@ def authenticateTradingView(driver):
     except:
         return False
 
-def checkForBuySinal(driver):
-    pass
-
 def DBPairValidation(pair_list):
     '''Checks open trades, then closes trades that don't meet requirements any longer and saves new Trades'''
 
@@ -417,8 +551,12 @@ def DBPairValidation(pair_list):
 
         # If the session does not exist in the new pair list, close it
         if not session_exists_in_pair_list:
+        # if session_exists_in_pair_list:
+            # remoce session from db1
             db.closeSession(session_currency)
-            sendTelegramSignal(f"NON POLAR ALERT!!! \n\n{session_currency} \n Close All Trades on this Pair\n\nNO LONGER POLAR!")
+            sendTelegramSignal(f"Watchlist Removal \n\n{session_currency} \n\n CLOSE TRADES on this Pair")
+            #close open trades on this pair
+            db2.insert_close_order(session_currency)
 
     # Filter out pairs that already exist in the open sessions with the same trade option
     for pair in pair_list:
@@ -436,7 +574,7 @@ def DBPairValidation(pair_list):
     for pair in filtered_pair_list:
         print("Trade Option: ", pair[1])
         db.insertNewSession(pair[0], pair[1], "OPEN")
-        sendTelegramSignal(f"{pair[0]} [Added to DB] \n\n")
+        sendTelegramSignal(f"Watchlist Addition \n\n{pair[0]}")
 
 
 def getChartData(driver, trade_option_from_csm, currency_pair):
@@ -448,28 +586,32 @@ def getChartData(driver, trade_option_from_csm, currency_pair):
     signal_data_cells = getElement(driver, 30, (By.CSS_SELECTOR, ".ka-tr"), "multiple")
     latest_signal_cell = signal_data_cells[1]
     latest_trade_option_el = latest_signal_cell.find_elements(By.TAG_NAME, "td")[2]
-    latest_trade_option = latest_trade_option_el.find_elements(By.CSS_SELECTOR, ".ka-cell")[1].text
+    latest_trade_option = latest_trade_option_el.find_elements(By.CSS_SELECTOR, ".ka-cell")[1].text.lower()
 
     latest_trade_option_time_el = latest_signal_cell.find_elements(By.TAG_NAME, "td")[3]
     latest_trade_option_time = latest_trade_option_time_el.find_elements(By.CSS_SELECTOR, ".ka-cell")[1].text
 
-    print(f"Latest Trade Option : {latest_trade_option} \nLatest Trade Time : {latest_trade_option_time}")
+    print(f"Latest Trade Option : {latest_trade_option.lower()} \nLatest Trade Time : {latest_trade_option_time}")
+    print(f"Trade Option From CSM : {trade_option_from_csm.lower()}")
 
     # checking if the time between the last signal and current time is close enought to initiate a signal to MT4
 
     time_difference = time_now - datetime.strptime(latest_trade_option_time, "%Y-%m-%d %H:%M")
-    if time_difference.total_seconds() / 3600 >= 1 and latest_trade_option == trade_option_from_csm:
+    print("TD : ", time_difference.total_seconds())
+    if time_difference.total_seconds() / 3600 <= 1 and latest_trade_option == trade_option_from_csm.lower():
         print("Haha! its within the time frame.")
-        telegram_signal = f'''{currency_pair} \n{latest_trade_option}'''
+        telegram_signal = f'''OPEN TRADE \n\n{latest_trade_option} {currency_pair}'''
         sendTelegramSignal(telegram_signal)
         print("Signal Sent")
-        #sendSignalToMT4()
+        #sendSignalToMT5()
+        db2.insert_trade_order(currency_pair, trade_option_from_csm.upper())
+        print("Sent Order TO Be Placed")
         pass
     else:
-        sendTelegramSignal(f"{currency_pair} \n\nNo Entry Point From this Pair")
+        sendTelegramSignal(f"{currency_pair} \n\nNo Signal Detected.")
         print("Its more than an Hour")
     return latest_trade_option
-        
+
 
 
 
@@ -480,7 +622,6 @@ def openTradingView(driver, pairs, pairs_trade_option):
         if i != 0:
             url = f"https://www.tradingview.com/chart/?symbol=FX_IDC%3A{pairs[i]}"
             driver.execute_script(f"window.open('{url}', '_blank');")
-            time.sleep(8)
         else:
             driver.get(f"https://www.tradingview.com/chart/?symbol=FX_IDC%3A{pairs[i]}")
 
@@ -488,6 +629,7 @@ def openTradingView(driver, pairs, pairs_trade_option):
 
         #changing chart timeframe
         if i == 0:
+            print("Opened Chart")
             chart_body_el = getElement(driver, 20, (By.TAG_NAME, "body"), "single")
             chart_body_el.send_keys("1h")
             time.sleep(2)
@@ -498,58 +640,91 @@ def openTradingView(driver, pairs, pairs_trade_option):
             time.sleep(10)
 
         #open pine editor
-        pine_editor_els = getElement(driver, 30, (By.CLASS_NAME, "tab-jJ_D7IlA"), "multiple")
-        pine_editor_els[1].click()
-        print("Clicked Pine Editor for : ", i)
-        time.sleep(10)
+        pine_editor = getElement(driver, 30, (By.CLASS_NAME, "tab-jJ_D7IlA"), "multiple")
+        pine_editor[1].click()
+        time.sleep(6)
 
         # interaction with pine editor
         if i == 0:
-            # this code is to make sure this element is existing, which in turns means 
-            editor_css_selector = ".monaco-scrollable-element.editor-scrollable.vs"
-            editor = getElement(driver, 30, (By.CSS_SELECTOR, editor_css_selector), "single")
-            print("editor elements : ", editor)
-            time.sleep(10)
             pine_editor = driver.switch_to.active_element
             pine_editor.send_keys(Keys.CONTROL + 'a')
             pine_editor.send_keys(Keys.BACKSPACE)
             pine_editor.send_keys(PINE_EDITOR_SCRIPT)
-            time.sleep(6)
-            add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
-            add_to_chart_el.click()
-            time.sleep(5)
+        time.sleep(6)
+        add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
+        add_to_chart_el.click()
+        time.sleep(5)
 
         # runs the account authentication of trading view
         if i == 0:
             authenticateTradingView(driver)
-        if i > 0:
-            pine_editor_els[1].click()
-            pine_editor_els[1].click()
-            pine_editor_els[1].click()
-            pine_editor_els[1].click()
-            
             add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
             add_to_chart_el.click()
 
         #clicks on "list of trades" Tab
-        
         list_of_trade_el = getElement(driver, 20, (By.ID, "List of Trades"), "single")
         list_of_trade_el.click()
         order_signal = getChartData(driver, trade_option, pairs[i])
         # Sending the pine script data to the editor
-#class="button-D4RPB3ZC size-small-D4RPB3ZC color-brand-D4RPB3ZC variant-primary-D4RPB3ZC apply-overflow-tooltip apply-overflow-tooltip--check-children-recursively apply-overflow-tooltip--allow-text"
+
 
 def polarStatusCheck():
     '''Checks if the polar status for opened pairs is still open'''
-    
     driver = startDriver()
-
+    driver.quit()
+    driver = startDriver()
+    print("driver : ", driver)
     openSite(driver)
     currency_list = getCurrencyMeters(driver)
     pairs_data = pair_currencies(currency_list)
-    
+
     DBPairValidation(pairs_data[1])
     driver.quit()
+
+def openTradingView2(driver, pair, pair_trade_option):
+    '''Opens Trading View and Pine Editor to Enter Trade Script'''
+    url = f"https://www.tradingview.com/chart/?symbol=FX_IDC%3A{pair}"
+    driver.get(url)
+    print("Opened Chart")
+
+    #changing the chart time frame        
+    chart_body_el = getElement(driver, 20, (By.TAG_NAME, "body"), "single")
+    chart_body_el.send_keys("1h")
+    time.sleep(2)
+
+    # Use JavaScript to trigger the Enter key event for the chart time confirmation
+    active_element = driver.switch_to.active_element
+    active_element.send_keys(Keys.ENTER)
+    print("CLicked Enter")
+    time.sleep(5)
+
+    #open pine editor
+    pine_editor = getElement(driver, 30, (By.CLASS_NAME, "tab-jJ_D7IlA"), "multiple")
+    pine_editor[1].click()
+    time.sleep(15)
+
+    # interaction with pine editor
+    pine_editor = driver.switch_to.active_element
+    pine_editor.send_keys(Keys.CONTROL + 'a')
+    pine_editor.send_keys(Keys.BACKSPACE)
+    pine_editor.send_keys(PINE_EDITOR_SCRIPT)
+    time.sleep(6)
+
+    #loading pine script indicator on chart
+    add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
+    add_to_chart_el.click()
+    time.sleep(5)
+
+    # runs the account authentication of trading view
+    authenticateTradingView(driver)
+    # add_to_chart_el = getElement(driver, 30, (By.CLASS_NAME, "addToChartButton-YIGGCRdR"), "single")
+    add_to_chart_el.click()
+
+    #clicks on "list of trades" Tab
+    list_of_trade_el = getElement(driver, 20, (By.ID, "List of Trades"), "single")
+    list_of_trade_el.click()
+    order_signal = getChartData(driver, pair_trade_option, pair)
+
 
 def runBot():
     '''Runs the Bot'''
@@ -558,60 +733,51 @@ def runBot():
     openSite(driver)
     currency_list = getCurrencyMeters(driver)
     pairs_data = pair_currencies(currency_list)
-    
+
     DBPairValidation(pairs_data[1])
-    
+    print("Opening Trading View.")
+    print("Pairs Data : ", pairs_data)
     # openTradingView(driver, pairs_data[0], pairs_data[1])
-    openTradingView(driver,['NZDUSD', 'EURJPY', 'USDCAD'],[['NZDUSD', 'SELL'], ['EURJPY', 'BUY'],['USDCAD', 'SELL']])
+    for i in range(len(pairs_data)):
+        if i > 0:
+            driver = startDriver()
+        print(f"Opening for chart {pairs_data[0][i]}")
+        openTradingView2(driver, pairs_data[0][i], pairs_data[1][i][1])
+        driver.quit()
     driver.quit()
 
+
+
+
+# runBot()
 def main():
-    # Schedule tasks
-    schedule.every(2).minutes.do(runBot)
-    # schedule.every().hour.do(sub_main)
-    schedule.every(1).minutes.do(polarStatusCheck)
+    print(datetime.now())
+    running = True
+    count = 0
+    while running:
+        # Get the current day of the week and time
+        now = datetime.now()
+        current_day = now.weekday()   # Monday is 0 and Sunday is 6
+        current_hour = now.hour
+        current_minute = now.minute
 
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
 
+        # Check if the current day is Monday to Friday (0-4) and time is between 12 PM and 6 PM
+        # if current_day >= 0 and current_day <= 4 and current_hour >= 7 and (current_hour < 22 or (current_hour == 18 and current_minute == 0)):
+        if True:
+            print(now)
+            try:
+                runBot()
+                running = False
+            except Exception as e:
+                if count == 2:
+                    running = False
+                print(e)
+                count+=1
+                sendTelegramSignal(f"Network Error Detected \n\n Retry In Progress")
+                time.sleep(5)
+        else:
+            print("Outside of allowed run time (Monday to Friday, 12 PM to 6 PM)")
+            running = False  # Exit the loop if it's outside the allowed run time
 
-def perform_trading_task():
-    # Define the timezone for Nigeria
-    nigerian_tz = pytz.timezone('Africa/Lagos')
-    
-    # Get the current time in UTC
-    current_time_utc = datetime.now(pytz.utc)
-    
-    # Convert the current time to Nigeria's timezone
-    current_time_nigeria = current_time_utc.astimezone(nigerian_tz)
-    
-    # adding -5 because for some reason, the timezone is returning an hour that is 5hour ahead from the current
-    current_hour = current_time_nigeria.hour -5 
-    current_day = current_time_nigeria.weekday()
-
-    # Debug statement to print current time details
-    print(f"Current time in Nigeria: {current_time_nigeria.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Current hour in Nigeria: {current_hour}")
-    print(f"Current day in Nigeria: {current_day}") 
-    current_hour = 19
-
-    if current_day >= 5 and 12 <= current_hour < 22:  # Monday to Friday, 12 PM to 6 PM
-        print("Yeah It Is WIthin the Time frame")
-        main()
-    else:
-        print(current_day)
-        print(current_hour)
-        print("Try Again Boss")
-
-# if __name__ == "__main__":
-#     schedule.every().hour.at(":00").do(perform_trading_task)
-#     schedule.every().hour.at(":30").do(perform_trading_task)
-
-#     while True:
-#         schedule.run_pending()
-#         time.sleep(1)
-
-# perform_trading_task()
-# main()
-runBot()
+main()
