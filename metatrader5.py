@@ -154,9 +154,6 @@ login = 154765604
 password = '#u4A73CRYix1'
 server = 'Exness-MT5Trial9'
 
-# Initialize TradeDatabase instance
-db = TradeDatabase()
-
 # Function to initialize and login to MetaTrader 5
 def initialize_and_login():
     if not mt5.initialize():
@@ -241,6 +238,8 @@ def open_trade(base_symbol, action):
     else:
         print("Trade opened successfully")
         # Mark trade as executed in the database
+        # Initialize TradeDatabase instance
+        db = TradeDatabase()
         db.delete_trade(base_symbol)
 
     mt5.shutdown()
@@ -259,6 +258,8 @@ def close_trades(base_symbol):
     positions = mt5.positions_get(symbol=symbol)
     if positions is None:
         print("No positions found for symbol:", base_symbol)
+        # Initialize TradeDatabase instance
+        db = TradeDatabase()
         db.delete_close_order(base_symbol)
         mt5.shutdown()
         return
@@ -301,6 +302,8 @@ def close_trades(base_symbol):
 
 # Function to check database for pending trades and close orders
 def check_database():
+    # Initialize TradeDatabase instance
+    db = TradeDatabase()
     pending_trades = db.get_pending_trades()
     if pending_trades:
         for trade in pending_trades:
