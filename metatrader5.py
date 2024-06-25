@@ -3,35 +3,52 @@ from urllib.parse import urlparse, parse_qs, unquote
 
 import MetaTrader5 as mt5
 import psycopg2
+from psycopg2 import OperationalError
 
 
 ################## DATABASE STUFF
 
 class TradeDatabase:
-    def __init__(self):
-        '''Initialize Database Connection'''
-        # Parse the connection URL
-        config = self.parse_db_url("postgresql://forex_signal_bot_user:cXCwDrnAO9oZFiEI0ob0LZiLpYO3WsY6@dpg-cpri553qf0us738fs13g-a.oregon-postgres.render.com/forex_signal_bot", ssl_require=True)
-        
-        # Establish the connection
-        self.conn = psycopg2.connect(
-            database=config["NAME"],
-            user=config["USER"],
-            password=config["PASSWORD"],
-            host=config["HOST"],
-            port=config["PORT"],
-            sslmode=config.get("sslmode", "")
+    def __init__(self, retries=5, delay=5):
+        '''Initialize Database Connection with retry logic'''
+        self.retries = retries
+        self.delay = delay
+        self.connect_with_retries()
+    
+
+    def connect_with_retries(self):
+        '''Try to connect to the database with retries'''
+        config = self.parse_db_url(
+            "postgresql://forex_signal_bot_user:cXCwDrnAO9oZFiEI0ob0LZiLpYO3WsY6@dpg-cpri553qf0us738fs13g-a.oregon-postgres.render.com/forex_signal_bot", 
+            ssl_require=True
         )
+        
+        for attempt in range(self.retries):
+            try:
+                self.conn = psycopg2.connect(
+                    database=config["NAME"],
+                    user=config["USER"],
+                    password=config["PASSWORD"],
+                    host=config["HOST"],
+                    port=config["PORT"],
+                    sslmode=config.get("sslmode", "")
+                )
+                print(f"Connected to the database on attempt {attempt + 1}")
+                return
+            except OperationalError as e:
+                print(f"Attempt {attempt + 1} failed: {e}")
+                if attempt < self.retries - 1:
+                    time.sleep(self.delay)
+                else:
+                    raise Exception("Could not connect to the database after several attempts")
     
     def parse_db_url(self, url, ssl_require=False):
         parsed_config = {}
-
         spliturl = urlparse(url)
-
         path = spliturl.path[1:]
         query = parse_qs(spliturl.query)
-
         hostname = spliturl.hostname or ""
+
         if "%" in hostname:
             hostname = spliturl.netloc
             if "@" in hostname:
@@ -39,7 +56,6 @@ class TradeDatabase:
             hostname = unquote(hostname)
 
         port = spliturl.port
-
         parsed_config.update(
             {
                 "NAME": unquote(path or ""),
