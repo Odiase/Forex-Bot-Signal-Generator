@@ -11,7 +11,7 @@ class TradeDatabase:
     def __init__(self):
         '''Initialize Database Connection'''
         # Parse the connection URL
-        config = self.parse_db_url("postgres://forex_tradfing_bot_db_user:884Oc6Dxk8nqykNgI4K87cSClMb7f1Ga@dpg-cp7kus7sc6pc73ac33i0-a.oregon-postgres.render.com/forex_tradfing_bot_db", ssl_require=True)
+        config = self.parse_db_url("postgresql://forex_signal_bot_user:cXCwDrnAO9oZFiEI0ob0LZiLpYO3WsY6@dpg-cpri553qf0us738fs13g-a.oregon-postgres.render.com/forex_signal_bot", ssl_require=True)
         
         # Establish the connection
         self.conn = psycopg2.connect(
@@ -95,7 +95,7 @@ class TradeDatabase:
     def delete_trade(self, symbol):
         '''Delete a trade from trade_orders table by trade SYMBOL'''
         cur = self.conn.cursor()
-        cur.execute("DELETE FROM trade_orders WHERE symbol = %s;", (symbol,))
+        cur.execute("DELETE FROM trade_orders WHERE symbol LIKE %s;", (symbol,))
         self.conn.commit()
         cur.close()
     
@@ -110,9 +110,11 @@ class TradeDatabase:
     def delete_close_order(self, close_order_symbol):
         '''Delete a close order from close_orders table by order SYMBOL'''
         cur = self.conn.cursor()
-        cur.execute("DELETE FROM close_orders WHERE symbol= %s;", (close_order_symbol,))
+        cur.execute("DELETE FROM close_orders WHERE symbol LIKE %s;", (close_order_symbol,))
         self.conn.commit()
         cur.close()
+
+    
     
     def insert_trade_order(self, symbol, action):
         '''Insert a new trade order into trade_orders table'''
@@ -144,9 +146,13 @@ class TradeDatabase:
 
 
 # Your login credentials
-login = 51829318
-password = '4n$Q1XNJqonzTV'
-server = 'ICMarketsSC-Demo'
+#login = 51829318
+#password = '4n$Q1XNJqonzTV'
+#server = 'ICMarketsSC-Demo'
+
+login = 154765604
+password = '#u4A73CRYix1'
+server = 'Exness-MT5Trial9'
 
 # Initialize TradeDatabase instance
 db = TradeDatabase()
@@ -176,28 +182,42 @@ def determine_lot_size():
     lot_size = min(max(int(balance / 100) * 0.01, 0.01), 0.1)  # Ensure lot size is at least 0.01 and at most 0.1
     return lot_size
 
+#function to get full symbol with any suffix
+def get_full_symbol(base_symbol):
+    symbols = mt5.symbols_get()
+    for symbol in symbols:
+        if symbol.name.startswith(base_symbol):
+            print(symbol.name)
+            return symbol.name
+    return None
+
 # Function to open a trade
-def open_trade(symbol, action):
+def open_trade(base_symbol, action):
     if not initialize_and_login():
         return
     
     lot_size = determine_lot_size()
+    symbol = get_full_symbol(base_symbol)
+    if symbol is None:
+        print("SYmbol with suffix not found")
+        mt5.shutdown()
+        return
     
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:
-        print("Failed to get symbol info for", symbol)
+        print("Failed to get symbol info for", base_symbol)
         mt5.shutdown()
         return
 
     if not symbol_info.visible:
         if not mt5.symbol_select(symbol, True):
-            print("Failed to select symbol:", symbol)
+            print("Failed to select symbol:", base_symbol)
             mt5.shutdown()
             return
     
     symbol_tick = mt5.symbol_info_tick(symbol)
     if symbol_tick is None:
-        print("Failed to get symbol tick for", symbol)
+        print("Failed to get symbol tick for", base_symbol)
         mt5.shutdown()
         return
 
@@ -221,17 +241,25 @@ def open_trade(symbol, action):
     else:
         print("Trade opened successfully")
         # Mark trade as executed in the database
-        db.delete_trade(symbol)
+        db.delete_trade(base_symbol)
 
     mt5.shutdown()
 
 # Function to close all trades for a symbol
-def close_trades(symbol):
+def close_trades(base_symbol):
     if not initialize_and_login():
         return
+
+    symbol = get_full_symbol(base_symbol)
+    if symbol is None:
+        print("SYmbol with suffix not found")
+        mt5.shutdown()
+        return
+    
     positions = mt5.positions_get(symbol=symbol)
     if positions is None:
-        print("No positions found for symbol:", symbol)
+        print("No positions found for symbol:", base_symbol)
+        db.delete_close_order(base_symbol)
         mt5.shutdown()
         return
 
@@ -257,8 +285,9 @@ def close_trades(symbol):
             print("Failed to close trade:", result.comment)
         else:
             print("Trade closed successfully")
-            db.delete_close_order(symbol)
-
+            db.delete_close_order(base_symbol)
+    
+    db.delete_close_order(base_symbol)
     mt5.shutdown()
 
 # Example usage:
@@ -294,6 +323,6 @@ if __name__ == "__main__":
         try:
             check_database()
         except Exception as e:
-            print(e)
+            print("Exception Occured : ", e)
         time.sleep(20)  # Check every 20 seconds
 
