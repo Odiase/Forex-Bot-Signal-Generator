@@ -150,6 +150,32 @@ class TradeDatabase:
         """, (symbol,))
         self.conn.commit()
         cur.close()
+    
+    def update_trade_status_to_open(self, symbol):
+        '''Update the status of a trade from PENDING to OPEN by trade ID'''
+        cur = self.conn.cursor()
+        cur.execute("""
+            UPDATE trade_orders
+            SET status = 'OPEN'
+            WHERE symbol = %s;
+        """, (symbol,))
+        self.conn.commit()
+        cur.close()
+
+    def get_open_trades(self):
+        '''Fetch trades with status 'OPEN' from trade_orders table'''
+        cur = self.conn.cursor()
+        cur.execute("SELECT * FROM trade_orders WHERE status = 'OPEN';")
+        trades = cur.fetchall()
+        cur.close()
+        return trades
+
+    def insert_close_orders_for_open_trades(self):
+        '''Insert close orders for all open trades'''
+        open_trades = self.get_open_trades()
+        for trade in open_trades:
+            symbol = trade[1]  # Assuming 'symbol' is the second column in the trade_orders table
+            self.insert_close_order(symbol)
 
     def close(self):
         '''Close the database connection'''
@@ -386,13 +412,13 @@ strategy.exit("Take Profit/Stop Loss", from_entry="Sell", loss=stopLossPips, pro
 def startDriver():
     # chromedriver_autoinstaller.install()
     options = Options()
-    # options.add_argument("--no-sandbox")
-    # options.add_argument("--headless")
-    # options.add_argument("--disable-gpu")
-    # options.add_argument("--disable-dev-shm-usage")  # overcome limited resource problems
-    # options.add_argument("--disable-software-rasterizer")
-    # options.add_argument("--disable-extensions")
-    # options.add_argument("--remote-debugging-port=9222")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-dev-shm-usage")  # overcome limited resource problems
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--remote-debugging-port=9222")
 
 
     # for option in options:
@@ -419,8 +445,8 @@ def sendTelegramSignal(message):
     message = str(message)
     TOKEN = "7258721074:AAHDu-Ckm6k_0l8wp1z6B47LDP-p8iTjuhs"
     # chat_id = "-1002001136974"
-    #oduwa, #dima group
-    chat_ids = ["1614557200", "-1002238594821"]
+    #oduwa, #dima group #odigie #Mafii
+    chat_ids = ["1614557200", "-1002238594821", "1964172420", "1196997302"]
     # chat_id = "-1002238594821"
     for chat_id in chat_ids:
         try:
@@ -687,7 +713,7 @@ def openTradingView2(driver, pair, pair_trade_option):
     driver.get(url)
     print("Opened Chart")
 
-    #changing the chart time frame        
+    #changing the chart time frame
     chart_body_el = getElement(driver, 20, (By.TAG_NAME, "body"), "single")
     chart_body_el.send_keys("1h")
     time.sleep(2)
@@ -731,6 +757,8 @@ def runBot():
 
     driver = startDriver()
     openSite(driver)
+    db2 = TradeDatabase()
+    db2.insert_close_orders_for_open_trades()
     currency_list = getCurrencyMeters(driver)
     pairs_data = pair_currencies(currency_list)
 
@@ -738,7 +766,7 @@ def runBot():
     print("Opening Trading View.")
     print("Pairs Data : ", pairs_data)
     # openTradingView(driver, pairs_data[0], pairs_data[1])
-    for i in range(len(pairs_data)):
+    for i in range(len(pairs_data[0])):
         if i > 0:
             driver = startDriver()
 
@@ -777,9 +805,9 @@ def main():
         current_minute = now.minute
 
 
-        # Check if the current day is Monday to Friday (0-4) and time is between 12 PM and 6 PM
-        # if current_day >= 0 and current_day <= 4 and current_hour >= 7 and (current_hour < 22 or (current_hour == 18 and current_minute == 0)):
-        if True:
+        # Check if the current day is Monday to Friday (0-4) and time is between 8 AM and 10 PM
+        if current_day >= 0 and current_day <= 4 and current_hour >= 7 and (current_hour < 22 or (current_hour == 18 and current_minute == 0)):
+            # if True:
             print(now)
             try:
                 runBot()
