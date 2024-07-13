@@ -150,32 +150,6 @@ class TradeDatabase:
         """, (symbol,))
         self.conn.commit()
         cur.close()
-    
-    def update_trade_status_to_open(self, symbol):
-        '''Update the status of a trade from PENDING to OPEN by trade ID'''
-        cur = self.conn.cursor()
-        cur.execute("""
-            UPDATE trade_orders
-            SET status = 'OPEN'
-            WHERE symbol = %s;
-        """, (symbol,))
-        self.conn.commit()
-        cur.close()
-
-    def get_open_trades(self):
-        '''Fetch trades with status 'OPEN' from trade_orders table'''
-        cur = self.conn.cursor()
-        cur.execute("SELECT * FROM trade_orders WHERE status = 'OPEN';")
-        trades = cur.fetchall()
-        cur.close()
-        return trades
-
-    def insert_close_orders_for_open_trades(self):
-        '''Insert close orders for all open trades'''
-        open_trades = self.get_open_trades()
-        for trade in open_trades:
-            symbol = trade[1]  # Assuming 'symbol' is the second column in the trade_orders table
-            self.insert_close_order(symbol)
 
     def close(self):
         '''Close the database connection'''
@@ -412,9 +386,9 @@ strategy.exit("Take Profit/Stop Loss", from_entry="Sell", loss=stopLossPips, pro
 def startDriver():
     # chromedriver_autoinstaller.install()
     options = Options()
-    # options.add_argument("--no-sandbox")
-    # options.add_argument("--headless")
-    # options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
     options.add_argument("--disable-dev-shm-usage")  # overcome limited resource problems
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-extensions")
@@ -707,37 +681,12 @@ def polarStatusCheck():
     DBPairValidation(pairs_data[1])
     driver.quit()
 
-def handleCookiePrompt(driver):
-    try:
-        # Step 1: Find the article tag
-        article = driver.find_element(By.TAG_NAME, "article")
-        
-        # Step 2: Within the article tag, find the last button (at any descendant level)
-        buttons = article.find_elements(By.TAG_NAME, "button")
-        last_button = buttons[-1]
-        
-        # Step 3: Click on the last button
-        last_button.click()
-
-        print("Button clicked successfully!")
-        
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
 def openTradingView2(driver, pair, pair_trade_option):
     '''Opens Trading View and Pine Editor to Enter Trade Script'''
     url = f"https://www.tradingview.com/chart/?symbol=FX_IDC%3A{pair}"
     driver.get(url)
     print("Opened Chart")
 
-    # handleCookiePrompt(driver)
-    try:
-        alert = driver.switch_to.alert
-        print(f"Unexpected alert text: {alert.text}")
-        alert.accept()
-    except:
-        print("No alert present to handle.")
-        
     #changing the chart time frame
     chart_body_el = getElement(driver, 20, (By.TAG_NAME, "body"), "single")
     chart_body_el.send_keys("1h")
@@ -782,8 +731,6 @@ def runBot():
 
     driver = startDriver()
     openSite(driver)
-    db2 = TradeDatabase()
-    db2.insert_close_orders_for_open_trades()
     currency_list = getCurrencyMeters(driver)
     pairs_data = pair_currencies(currency_list)
 
